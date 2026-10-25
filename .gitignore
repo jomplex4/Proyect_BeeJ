@@ -1,0 +1,16 @@
+# Gradle / Android
+.gradle/
+build/
+local.properties
+*.iml
+.idea/
+.vscode/
+captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+# El modelo de voz (unos 40 MB) lo descarga GitHub Actions al compilar.
+app/src/main/assets/model-en-us/
+# La keystore SI se versiona a propósito (ver README).
+!app/beej-release.jks
