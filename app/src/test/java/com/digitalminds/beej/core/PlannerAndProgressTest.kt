@@ -7,13 +7,13 @@ import org.junit.Test
 
 class PlannerAndProgressTest {
     @Test fun coffeeNormalSequence() {
-        val steps = SpellPlanner.spellSteps("COFFEE", false, Speed.NORMAL)
+        val steps = SpellPlanner.spellSteps("COFFEE", false, SpellSpeed.NORMAL)
         assertEquals(listOf("l_c", "l_o", "l_f", "l_f", "l_e", "l_e"), steps.map { it.clip })
         assertEquals("C, O, F, F, E, E", SpellPlanner.spellText("COFFEE", false))
     }
 
     @Test fun coffeeDoubleSequence() {
-        val steps = SpellPlanner.spellSteps("COFFEE", true, Speed.NORMAL)
+        val steps = SpellPlanner.spellSteps("COFFEE", true, SpellSpeed.NORMAL)
         assertEquals(listOf("l_c", "l_o", "double", "l_f", "double", "l_e"), steps.map { it.clip })
         assertEquals("C, O, DOUBLE F, DOUBLE E", SpellPlanner.spellText("COFFEE", true))
     }
@@ -30,25 +30,31 @@ class PlannerAndProgressTest {
         assertEquals("L, A, W, Y, E, R", SpellPlanner.spellText("LAWYER", true))
     }
 
-    @Test fun letterGapsGrowWithSlowerSpeedAndNeverTooTight() {
-        val s = SpellPlanner.letterGapMs(Speed.SLOW)
-        val n = SpellPlanner.letterGapMs(Speed.NORMAL)
-        val f = SpellPlanner.letterGapMs(Speed.FAST)
-        assertTrue(s > n && n > f)
-        assertTrue(f >= 400)
-        assertTrue(SpellPlanner.spellSteps("PILOT", false, Speed.FAST).all { it.gapAfterMs == f })
+    @Test fun spellSpeedsHaveNoSlowLevelAndGapsShrink() {
+        val levels = SpellSpeed.values().toList()
+        assertEquals(listOf("Normal", "Rápido", "Muy rápido", "Extra rápido"), levels.map { it.label })
+        assertEquals(listOf("n", "f", "v", "x"), levels.map { it.suffix })
+        for (i in 1 until levels.size) assertTrue(levels[i].gapMs < levels[i - 1].gapMs)
+        assertEquals(650, SpellPlanner.letterGapMs(SpellSpeed.NORMAL))
+        assertTrue(SpellPlanner.spellSteps("PILOT", false, SpellSpeed.EXTRA_FAST).all { it.gapAfterMs == SpellSpeed.EXTRA_FAST.gapMs })
+    }
+
+    @Test fun letterFilesFollowSpeedSuffix() {
+        assertEquals("l_a_x", SpellPlanner.letterFile("l_a", SpellSpeed.EXTRA_FAST))
+        assertEquals("double_v", SpellPlanner.letterFile("double", SpellSpeed.VERY_FAST))
+        assertEquals("w_pilot_s", SpellPlanner.fileFor("w_pilot", Speed.SLOW))
     }
 
     @Test fun everyWordUsesOnlyKnownClips() {
         val known = ('a'..'z').map { "l_$it" }.toSet() + "double"
         for (w in Words.all) for (dbl in listOf(false, true)) {
-            assertTrue(w.text, SpellPlanner.spellSteps(w.text, dbl, Speed.NORMAL).all { it.clip in known })
+            assertTrue(w.text, SpellPlanner.spellSteps(w.text, dbl, SpellSpeed.NORMAL).all { it.clip in known })
         }
     }
 
     @Test fun spansMatchStepsInBothModes() {
         for (w in Words.all) for (dbl in listOf(false, true)) {
-            assertEquals(w.text, SpellPlanner.spellSteps(w.text, dbl, Speed.NORMAL).size, SpellPlanner.letterSpans(w.text, dbl).size)
+            assertEquals(w.text, SpellPlanner.spellSteps(w.text, dbl, SpellSpeed.NORMAL).size, SpellPlanner.letterSpans(w.text, dbl).size)
         }
         assertEquals(listOf(0..0, 1..1, 2..3, 2..3, 4..5, 4..5), SpellPlanner.letterSpans("COFFEE", true))
         assertEquals(6, SpellPlanner.letterSpans("COFFEE", false).size)

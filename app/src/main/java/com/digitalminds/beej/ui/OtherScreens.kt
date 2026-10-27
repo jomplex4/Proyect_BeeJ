@@ -170,7 +170,8 @@ private val STEPS = listOf(
     "Escríbela de memoria.",
     "Comprueba y corrige al instante.",
     "Repite las falladas más tarde: hoy y mañana.",
-    "Simula el concurso: palabra, deletreo, palabra."
+    "Simula el concurso: palabra, deletreo, palabra.",
+    "Al hablar, no pauses más de 1 segundo entre letras."
 )
 
 @Composable

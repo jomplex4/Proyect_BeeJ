@@ -41,9 +41,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.digitalminds.beej.AppViewModel
 import com.digitalminds.beej.R
-import com.digitalminds.beej.core.ContestEvaluator
+import com.digitalminds.beej.core.JudgeOutcome
+import com.digitalminds.beej.core.VoiceJudge
+import com.digitalminds.beej.core.VoiceJudgement
 import com.digitalminds.beej.core.ContestFailure
-import com.digitalminds.beej.core.ContestResult
 import com.digitalminds.beej.core.Words
 import com.digitalminds.beej.voice.VoiceState
 import kotlinx.coroutines.delay
@@ -66,8 +67,8 @@ fun ContestScreen(vm: AppViewModel) {
     var idx by remember { mutableIntStateOf(0) }
     var score by remember { mutableIntStateOf(0) }
     var best by remember { mutableIntStateOf(vm.bestContest) }
-    var result by remember { mutableStateOf<ContestResult?>(null) }
-    var partial by remember { mutableStateOf("") }
+    var result by remember { mutableStateOf<VoiceJudgement?>(null) }
+    var ready by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf("") }
     var finished by remember { mutableStateOf(false) }
     val stop = remember { BooleanArray(1) }
@@ -77,15 +78,15 @@ fun ContestScreen(vm: AppViewModel) {
         scope.launch {
             val word = order[idx]
             var retries = 0
-            result = null; notice = ""; partial = ""
+            result = null; notice = ""; ready = false
             phase = CPhase.SHOWING
             vm.playWord(word)
             delay(2300)
-            var final: ContestResult? = null
+            var final: VoiceJudgement? = null
             while (final == null) {
                 phase = CPhase.LISTENING
-                partial = ""; stop[0] = false; repeat[0] = false
-                val toks = vm.voice.listen({ partial = it }, { stop[0] })
+                ready = false; stop[0] = false; repeat[0] = false
+                val cap = vm.voice.listen(word, true, { ready = true }, { stop[0] })
                 if (repeat[0]) {
                     // "Could you repeat the word, please?"
                     repeat[0] = false
@@ -94,19 +95,20 @@ fun ContestScreen(vm: AppViewModel) {
                     delay(1500)
                     continue
                 }
-                val r = ContestEvaluator.evaluate(word, toks)
-                if ((r.failure == ContestFailure.NOTHING_HEARD || r.uncertain) && retries < 2) {
+                val j = VoiceJudge.judge(word, cap.forced, cap.free, true)
+                if ((j.outcome == JudgeOutcome.NOTHING || j.outcome == JudgeOutcome.UNSURE) && retries < 2) {
                     retries++
-                    notice = "No te escuché bien. Repite."
+                    notice = if (j.outcome == JudgeOutcome.NOTHING) "No te escuché. Repite." else "No te entendí bien. Repite."
                     delay(600)
                     continue
                 }
-                final = r
+                final = j
             }
             val fr = final ?: return@launch
             result = fr
-            vm.record(word, fr.correct)
-            if (fr.correct) {
+            val ok = fr.outcome == JudgeOutcome.CORRECT
+            vm.record(word, ok)
+            if (ok) {
                 score++
                 if (score > best) { best = score; vm.bestContest = score }
                 if (idx + 1 >= order.size) finished = true
@@ -137,7 +139,7 @@ fun ContestScreen(vm: AppViewModel) {
                     style = Type.WordBig.copy(fontSize = if (order[idx].length > 10) 32.sp else 42.sp),
                     textAlign = TextAlign.Center, maxLines = 1
                 )
-                CPhase.LISTENING -> Listening(partial, notice)
+                CPhase.LISTENING -> Listening(ready, notice)
                 CPhase.RESULT -> ResultView(result!!, score, best, finished)
             }
         }
@@ -158,7 +160,7 @@ fun ContestScreen(vm: AppViewModel) {
                     SquareButton(R.drawable.ic_check, "Listo", { stop[0] = true }, accent = true, size = 64.dp)
                 }
                 CPhase.RESULT -> {
-                    val ok = result?.correct == true && !finished
+                    val ok = result?.outcome == JudgeOutcome.CORRECT && !finished
                     if (ok) {
                         SquareButton(R.drawable.ic_next, "Siguiente palabra", { idx++; playRound() }, accent = true, size = 64.dp)
                     } else {
@@ -187,44 +189,45 @@ private fun Intro(voiceState: VoiceState, best: Int, goal: Int) {
 }
 
 @Composable
-private fun Listening(partial: String, notice: String) {
+private fun Listening(ready: Boolean, notice: String) {
     val t = rememberInfiniteTransition(label = "pulse")
     val a by t.animateFloat(0.35f, 1f, infiniteRepeatable(tween(800), RepeatMode.Reverse), label = "a")
     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(18.dp)) {
         Box(
-            Modifier.size(92.dp).alpha(a).clip(CircleShape).background(Brand.Ferrari),
+            Modifier.size(92.dp).alpha(if (ready) a else 0.25f).clip(CircleShape).background(Brand.Ferrari),
             contentAlignment = Alignment.Center
         ) {
             Icon(painterResource(R.drawable.ic_mic), null, tint = Brand.TextPrimary, modifier = Modifier.size(38.dp))
         }
         if (notice.isNotBlank()) Text(notice, style = Type.Body.copy(color = Brand.Error), textAlign = TextAlign.Center)
-        Text(
-            if (partial.isBlank()) "Palabra, deletreo, palabra" else partial,
-            style = Type.BodySecondary, textAlign = TextAlign.Center
-        )
+        Text(if (ready) "Palabra, deletreo, palabra" else "Preparando…", style = Type.BodySecondary, textAlign = TextAlign.Center)
         Text("Could you repeat the word, please?", style = Type.Label.copy(fontSize = 11.sp))
     }
 }
 
 @Composable
-private fun ResultView(r: ContestResult, score: Int, best: Int, finished: Boolean) {
+private fun ResultView(r: VoiceJudgement, score: Int, best: Int, finished: Boolean) {
+    val correct = r.outcome == JudgeOutcome.CORRECT
     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        if (r.correct) {
+        if (correct) {
             Icon(painterResource(R.drawable.ic_check), null, tint = Brand.TextPrimary, modifier = Modifier.size(40.dp))
             Text(if (finished) "¡Las 30 palabras!" else "Correcto", style = Type.Card.copy(fontSize = 22.sp))
+            FluencyLine(r)
         } else {
             Text("Incorrecto", style = Type.Card.copy(fontSize = 22.sp, color = Brand.Error))
             Text(r.word, style = Type.Row)
-            when (r.failure) {
-                ContestFailure.NOTHING_HEARD -> Text("No se escuchó nada.", style = Type.BodySecondary)
-                ContestFailure.MISSING_START_WORD -> Text("Faltó decir la palabra al inicio.", style = Type.BodySecondary)
-                ContestFailure.MISSING_END_WORD -> Text("Faltó repetir la palabra al final.", style = Type.BodySecondary)
-                ContestFailure.WRONG_SPELLING -> {
+            when {
+                r.outcome == JudgeOutcome.NOTHING -> Text("No se escuchó nada.", style = Type.BodySecondary)
+                r.outcome == JudgeOutcome.UNSURE ->
+                    Text("No pude confirmar tu deletreo. Habla claro y sin pausas largas.", style = Type.BodySecondary, textAlign = TextAlign.Center)
+                r.failure == ContestFailure.MISSING_START_WORD -> Text("Faltó decir la palabra al inicio.", style = Type.BodySecondary)
+                r.failure == ContestFailure.MISSING_END_WORD -> Text("Faltó repetir la palabra al final.", style = Type.BodySecondary)
+                r.failure == ContestFailure.WRONG_SPELLING -> {
                     DiffLines(r.spelling)
                     if (!r.startWordOk || !r.endWordOk) Text("Recuerda: palabra, deletreo, palabra.", style = Type.BodySecondary)
                 }
-                ContestFailure.NONE -> {}
             }
+            FluencyLine(r)
             Text("Rondas correctas: $score  ·  Mejor: $best", style = Type.Label)
         }
     }

@@ -39,7 +39,7 @@ con `BEE-J-vX.Y.apk`. Si el paso rojo falla, envíame el log de ese paso.
 
 | Módulo | Qué hace |
 |---|---|
-| Aprender | Las 30 palabras. Escuchar palabra, escuchar deletreo (letra por letra con pausas), velocidades separadas, formato "F, F" o "DOUBLE F". |
+| Aprender | Las 30 palabras. Escuchar palabra y deletreo (letra por letra). Velocidad de palabra (Lento, Normal, Rápido) y de deletreo (Normal, Rápido, Muy rápido, Extra rápido, hasta unas 3 letras por segundo como en campeonatos). Formato "F, F" o "DOUBLE F". |
 | Entrenar | Oral (hablas y la app compara letra por letra) y escrito (deletreo con teclado propio, sin pistas de longitud). |
 | Concurso | Simula el real: ves la palabra ~2,3 s, suena, desaparece y dices **PALABRA, deletreo, PALABRA**. Un error termina la ronda. |
 | Repasar errores | Una palabra sale de la lista tras **3 aciertos seguidos desde el último error, en al menos 2 días distintos**. |
@@ -48,9 +48,14 @@ con `BEE-J-vX.Y.apk`. Si el paso rojo falla, envíame el log de ese paso.
 
 ## Decisiones técnicas
 
-- **Voz (offline):** Vosk con modelo `vosk-model-small-en-us-0.15` (Apache 2.0), con **gramática cerrada**: solo las 30 palabras,
-  los nombres de las letras y "double". No es dictado abierto. El modelo (~40 MB) lo descarga GitHub Actions al compilar
-  y queda dentro del APK; no se sube al repositorio (ver `.gitignore`).
+- **Voz (offline):** Vosk con el modelo `vosk-model-small-en-us-0.15` (Apache 2.0). Con letras sueltas acertaba muy poco
+  (4 de 16 palabras en mis pruebas), así que ahora cada intento se lee DOS veces: (1) con una **gramática hecha a la medida de
+  la palabra** (deletreo correcto, "double", y los errores probables: letra parecida, omitida, repetida o cambiada de lugar; en el
+  Concurso también palabra inicial y final) y (2) con una gramática libre que hace de **veto**. Si la lectura libre oye otra letra,
+  la app pide repetir en vez de dar por bueno el deletreo. Un error solo se marca si ambas lecturas coinciden en la posición.
+  Resultados con audio de prueba SINTÉTICO (no voces reales): deletreos correctos 44 aceptados, 13 pidieron repetir, 7 marcados
+  como error por equivocación; deletreos con error a propósito 25 marcados, 5 pidieron repetir, 2 aceptados por equivocación.
+  Letras que suenan casi igual (B/V, C/Z, A/I) son el punto débil. El modelo (~40 MB) lo descarga GitHub Actions al compilar.
 - **Normalización:** "bee/be" = B, "see/sea" = C, "are" = R, "you" = U, "why" = Y, "double u" = W, "double f" = FF, etc.
   Si el reconocedor oye una letra con poca seguridad, la app pide repetir en vez de contarla como error.
 - **Audio (offline):** 26 letras, "double" y 30 palabras como archivos `.ogg` en `app/src/main/assets/audio/`
@@ -58,7 +63,7 @@ con `BEE-J-vX.Y.apk`. Si el paso rojo falla, envíame el log de ese paso.
   Para reemplazar cualquier audio por una grabación humana basta **guardar un archivo con el mismo nombre** y
   actualizar su duración en `manifest.txt` (milisegundos).
 - **Velocidades:** palabra y deletreo son independientes. En deletreo cambian el ritmo y la pausa entre letras
-  (lento 950 ms, normal 650 ms, rápido 430 ms); incluso en rápido cada letra se distingue.
+  (Normal 650 ms, Rápido 330 ms, Muy rápido 160 ms, Extra rápido 60 ms con la letra acelerada 1,7 veces).
 - **Arquitectura:** una sola Activity, ViewModel + StateFlow, sin librerías de íconos. La lógica crítica está en
   `app/src/main/java/com/digitalminds/beej/core/` (Kotlin puro, con pruebas en `app/src/test`).
 - **Compatibilidad:** `minSdk 31` (Android 12), `compileSdk/targetSdk 35`, AGP 8.7.3, Gradle 8.9, Kotlin 2.0.21, JDK 17.
@@ -66,9 +71,10 @@ con `BEE-J-vX.Y.apk`. Si el paso rojo falla, envíame el log de ese paso.
 
 ## Fuentes y licencias
 
-- Audio: **Kokoro v1.0** (pesos Apache 2.0), voz estadounidense `am_adam`, generado con `kokoro-onnx`. Pronunciación de letras
-  con fonemas explícitos (A = /eɪ/, I = /aɪ/, J = /dʒeɪ/, R = /ɑr/, W = "double u", Z = "zee").
-  Confirma la licencia vigente en la página oficial del modelo antes de redistribuir fuera del colegio.
+- Letras A a Z: **grabaciones humanas** en inglés de EE. UU. de Joshua Shreve (2019), proyecto GCompris, licencia **GPL v3 o posterior**
+  (https://github.com/KDE/gcompris-data, voices/en_US/alphabet). Por esa licencia, si publicas la app, publica también su código bajo GPL.
+  Ver `app/src/main/assets/audio/LICENSES.txt`.
+- Palabras y "double": **Kokoro v1.0** (pesos Apache 2.0), voz estadounidense `am_adam`. Confirma la licencia vigente en la página oficial del modelo.
 - Voz: Vosk (Apache 2.0) y modelo pequeño en inglés (Apache 2.0). JNA (Apache 2.0 / LGPL 2.1).
 - Fuentes tipográficas: Space Grotesk, Michroma, Atkinson Hyperlegible (SIL Open Font License; textos en `assets/fonts-licenses`).
 - Logos: material propio de BEE J y DIGITALMINDS.

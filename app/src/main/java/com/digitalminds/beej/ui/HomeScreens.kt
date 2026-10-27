@@ -165,6 +165,8 @@ fun AboutScreen(vm: AppViewModel) {
             Text("Versión $version", style = Type.BodySecondary)
             Spacer(Modifier.height(18.dp))
             Text("Creado por Joel Mamani Pauccara", style = Type.Body, textAlign = TextAlign.Center)
+            Spacer(Modifier.height(14.dp))
+            Text("Voz del abecedario: Joshua Shreve (GCompris, GPL v3+)", style = Type.Label.copy(fontSize = 11.sp), textAlign = TextAlign.Center)
         }
         Column(Modifier.fillMaxWidth().padding(bottom = 40.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Text("POWERED BY", style = Type.Wordmark)

@@ -4,8 +4,8 @@ import android.content.Context
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
-import com.digitalminds.beej.core.HeardToken
-import com.digitalminds.beej.core.SpokenLetters
+import com.digitalminds.beej.core.PhraseGrammar
+import com.digitalminds.beej.core.TimedToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
@@ -35,9 +35,11 @@ class VoiceEngine(private val context: Context) {
 
     @Volatile private var model: Model? = null
 
-    private val grammar: String by lazy {
-        (SpokenLetters.grammarTokens() + "[unk]").joinToString(",", "[", "]") { "\"$it\"" }
-    }
+    /** Segunda lectura: cualquier letra, "double" y las 30 palabras. */
+    private val freeGrammar: String by lazy { PhraseGrammar.toJson(PhraseGrammar.free()) }
+
+    /** Las dos lecturas del mismo audio. */
+    class Capture(val forced: List<TimedToken>, val free: List<TimedToken>)
 
     suspend fun prepare() = withContext(Dispatchers.IO) {
         if (model != null) return@withContext
@@ -84,35 +86,46 @@ class VoiceEngine(private val context: Context) {
 
     /**
      * Escucha hasta que el alumno termina de hablar (silencio), se toca "listo" o se agota el tiempo.
-     * @param onPartial texto parcial en vivo.
+     * Lee el audio DOS veces a la vez: con la gramática de esa palabra y con una gramática libre.
+     * @param word palabra que se debe deletrear.
+     * @param contest true: formato PALABRA, deletreo, PALABRA.
+     * @param onReady se avisa cuando el micrófono ya está grabando (preparar la gramática tarda un instante).
      * @param stopRequested devuelve true si el usuario pidió terminar.
      */
     suspend fun listen(
-        onPartial: (String) -> Unit = {},
+        word: String,
+        contest: Boolean,
+        onReady: () -> Unit = {},
         stopRequested: () -> Boolean = { false }
-    ): List<HeardToken> = withContext(Dispatchers.IO) {
-        val m = model ?: return@withContext emptyList()
+    ): Capture = withContext(Dispatchers.IO) {
+        val m = model ?: return@withContext Capture(emptyList(), emptyList())
         val sampleRate = 16000
         val minBuf = AudioRecord.getMinBufferSize(sampleRate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
         var record: AudioRecord? = null
-        var rec: Recognizer? = null
-        val collected = ArrayList<HeardToken>()
+        var forcedRec: Recognizer? = null
+        var freeRec: Recognizer? = null
+        val forced = ArrayList<TimedToken>()
+        val free = ArrayList<TimedToken>()
         try {
+            val phrases = if (contest) PhraseGrammar.contest(word) else PhraseGrammar.training(word)
+            // Primero se arman las gramáticas y luego se empieza a grabar, para no perder el inicio.
+            forcedRec = Recognizer(m, sampleRate.toFloat(), PhraseGrammar.toJson(phrases))
+            forcedRec.setWords(true)
+            freeRec = Recognizer(m, sampleRate.toFloat(), freeGrammar)
+            freeRec.setWords(true)
             record = AudioRecord(
                 MediaRecorder.AudioSource.MIC, sampleRate,
                 AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT,
                 maxOf(minBuf, 8000) * 2
             )
-            if (record.state != AudioRecord.STATE_INITIALIZED) return@withContext emptyList()
-            rec = Recognizer(m, sampleRate.toFloat(), grammar)
-            rec.setWords(true)
+            if (record.state != AudioRecord.STATE_INITIALIZED) return@withContext Capture(emptyList(), emptyList())
             record.startRecording()
+            onReady()
 
             val buf = ShortArray(1600)
             val start = System.currentTimeMillis()
             var lastVoice = start
             var spoke = false
-            var lastPartial = ""
             while (isActive) {
                 val n = record.read(buf, 0, buf.size)
                 if (n <= 0) continue
@@ -121,41 +134,38 @@ class VoiceEngine(private val context: Context) {
                 val rms = sqrt(sum / n)
                 val now = System.currentTimeMillis()
                 if (rms > VOICE_RMS) { lastVoice = now; spoke = true }
-                if (rec.acceptWaveForm(buf, n)) {
-                    collected += parse(rec.result)
-                } else {
-                    val p = JSONObject(rec.partialResult).optString("partial", "")
-                    if (p != lastPartial) { lastPartial = p; onPartial(p) }
-                }
-                val silent = now - lastVoice
+                if (forcedRec.acceptWaveForm(buf, n)) forced += parse(forcedRec.result)
+                if (freeRec.acceptWaveForm(buf, n)) free += parse(freeRec.result)
                 if (stopRequested()) break
-                if (spoke && silent > END_SILENCE_MS) break
+                if (spoke && now - lastVoice > END_SILENCE_MS) break
                 if (!spoke && now - start > NO_SPEECH_MS) break
                 if (now - start > MAX_MS) break
             }
-            collected += parse(rec.finalResult)
+            forced += parse(forcedRec.finalResult)
+            free += parse(freeRec.finalResult)
         } catch (e: Throwable) {
             // Sin permiso o sin micrófono: se devuelve lo que haya.
         } finally {
             try { record?.stop() } catch (_: Throwable) {}
             try { record?.release() } catch (_: Throwable) {}
-            try { rec?.close() } catch (_: Throwable) {}
+            try { forcedRec?.close() } catch (_: Throwable) {}
+            try { freeRec?.close() } catch (_: Throwable) {}
         }
-        collected
+        Capture(forced, free)
     }
 
-    private fun parse(json: String): List<HeardToken> {
+    private fun parse(json: String): List<TimedToken> {
         val o = JSONObject(json)
-        val arr = o.optJSONArray("result")
-        if (arr != null) {
-            val out = ArrayList<HeardToken>()
-            for (i in 0 until arr.length()) {
-                val w = arr.getJSONObject(i)
-                out += HeardToken(w.optString("word"), w.optDouble("conf", 1.0).toFloat())
-            }
-            return out
+        val arr = o.optJSONArray("result") ?: return emptyList()
+        val out = ArrayList<TimedToken>()
+        for (i in 0 until arr.length()) {
+            val w = arr.getJSONObject(i)
+            out += TimedToken(
+                w.optString("word"), w.optDouble("conf", 1.0).toFloat(),
+                w.optDouble("start", 0.0), w.optDouble("end", 0.0)
+            )
         }
-        return o.optString("text", "").split(' ').filter { it.isNotBlank() }.map { HeardToken(it) }
+        return out
     }
 
     companion object {

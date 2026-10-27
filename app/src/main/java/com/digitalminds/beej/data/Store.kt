@@ -4,6 +4,7 @@ import android.content.Context
 import com.digitalminds.beej.core.Progress
 import com.digitalminds.beej.core.ProgressCodec
 import com.digitalminds.beej.core.Speed
+import com.digitalminds.beej.core.SpellSpeed
 
 /** Todo se guarda en el teléfono (SharedPreferences). Sin cuentas, sin internet. */
 class Store(context: Context) {
@@ -16,9 +17,9 @@ class Store(context: Context) {
         get() = Speed.fromOrdinal(prefs.getInt("word_speed", Speed.NORMAL.ordinal))
         set(v) { prefs.edit().putInt("word_speed", v.ordinal).apply() }
 
-    var spellSpeed: Speed
-        get() = Speed.fromOrdinal(prefs.getInt("spell_speed", Speed.NORMAL.ordinal))
-        set(v) { prefs.edit().putInt("spell_speed", v.ordinal).apply() }
+    var spellSpeed: SpellSpeed
+        get() = SpellSpeed.fromOrdinal(prefs.getInt("spell_speed2", SpellSpeed.NORMAL.ordinal))
+        set(v) { prefs.edit().putInt("spell_speed2", v.ordinal).apply() }
 
     var doubleMode: Boolean
         get() = prefs.getBoolean("double_mode", false)

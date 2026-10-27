@@ -5,6 +5,7 @@ import android.media.AudioAttributes
 import android.media.SoundPool
 import com.digitalminds.beej.core.AudioStep
 import com.digitalminds.beej.core.Speed
+import com.digitalminds.beej.core.SpellSpeed
 import com.digitalminds.beej.core.SpellPlanner
 import kotlinx.coroutines.delay
 import java.util.concurrent.ConcurrentHashMap
@@ -47,11 +48,11 @@ class AudioEngine(private val context: Context) {
     private fun load(file: String): Int? {
         soundIds[file]?.let { return it }
         return try {
-            context.assets.openFd("audio/$file.ogg").use { afd ->
-                val id = pool.load(afd, 1)
-                soundIds[file] = id
-                id
-            }
+            val afd = context.assets.openFd("audio/$file.ogg")
+            val id = pool.load(afd, 1)
+            afd.close()
+            soundIds[file] = id
+            id
         } catch (e: Exception) {
             null
         }
@@ -87,11 +88,11 @@ class AudioEngine(private val context: Context) {
      * Reproduce una secuencia (deletreo). [onStep] avisa el índice del paso que empieza.
      * Si la corrutina se cancela, se corta el sonido.
      */
-    suspend fun playSteps(steps: List<AudioStep>, speed: Speed, onStep: (Int) -> Unit = {}) {
+    suspend fun playSteps(steps: List<AudioStep>, speed: SpellSpeed, onStep: (Int) -> Unit = {}) {
         try {
             steps.forEachIndexed { i, s ->
                 onStep(i)
-                val file = SpellPlanner.fileFor(s.clip, speed)
+                val file = SpellPlanner.letterFile(s.clip, speed)
                 val id = ready(file)
                 if (id != null) {
                     val stream = pool.play(id, 1f, 1f, 1, 0, 1f)
@@ -118,8 +119,8 @@ class AudioEngine(private val context: Context) {
         fun filesForWordSpeed(speed: Speed, words: List<String>): List<String> =
             words.map { SpellPlanner.fileFor(SpellPlanner.wordClip(it), speed) }
 
-        fun filesForLetterSpeed(speed: Speed): List<String> =
-            ('a'..'z').map { SpellPlanner.fileFor("l_$it", speed) } +
-                SpellPlanner.fileFor(SpellPlanner.DOUBLE_CLIP, speed)
+        fun filesForLetterSpeed(speed: SpellSpeed): List<String> =
+            ('a'..'z').map { SpellPlanner.letterFile("l_$it", speed) } +
+                SpellPlanner.letterFile(SpellPlanner.DOUBLE_CLIP, speed)
     }
 }

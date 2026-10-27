@@ -1,0 +1,9 @@
+Audio de BEE J
+
+Letras A a Z (l_*.ogg): grabaciones humanas en ingles de EE. UU. de Joshua Shreve (2019),
+del proyecto GCompris (carpeta voices/en_US/alphabet, https://github.com/KDE/gcompris-data).
+Licencia: GNU GPL v3 o posterior. Se procesaron (recorte de silencios, volumen y velocidad).
+Este audio se distribuye bajo esa misma licencia; el texto de la GPL v3 esta en https://www.gnu.org/licenses/gpl-3.0.html
+
+Palabra "double" (double_*.ogg) y las 30 palabras (w_*.ogg): voz neuronal Kokoro v1.0
+(pesos con licencia Apache 2.0), voz estadounidense am_adam.

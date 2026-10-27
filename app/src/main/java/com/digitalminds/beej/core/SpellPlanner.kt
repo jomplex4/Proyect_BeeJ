@@ -8,6 +8,21 @@ enum class Speed(val suffix: String, val label: String) {
     }
 }
 
+/**
+ * Niveles de velocidad del deletreo. No hay nivel lento: el más tranquilo es "Normal".
+ * [gapMs] es la pausa tras cada letra; el último nivel es el ritmo de los campeonatos (unas 3 letras por segundo).
+ */
+enum class SpellSpeed(val suffix: String, val label: String, val gapMs: Int, val doubleGapMs: Int) {
+    NORMAL("n", "Normal", 650, 130),
+    FAST("f", "Rápido", 330, 90),
+    VERY_FAST("v", "Muy rápido", 160, 50),
+    EXTRA_FAST("x", "Extra rápido", 60, 20);
+
+    companion object {
+        fun fromOrdinal(i: Int): SpellSpeed = values().getOrElse(i) { NORMAL }
+    }
+}
+
 /** Un audio dentro de una secuencia, con la pausa que va después. */
 data class AudioStep(val clip: String, val gapAfterMs: Int)
 
@@ -17,13 +32,7 @@ data class AudioStep(val clip: String, val gapAfterMs: Int)
  */
 object SpellPlanner {
     /** Pausa entre el final de una letra y el inicio de la siguiente. */
-    fun letterGapMs(speed: Speed): Int = when (speed) {
-        Speed.SLOW -> 950
-        Speed.NORMAL -> 650
-        Speed.FAST -> 430
-    }
-
-    const val DOUBLE_TO_LETTER_GAP_MS = 130
+    fun letterGapMs(speed: SpellSpeed): Int = speed.gapMs
 
     fun letterClip(letter: Char): String = "l_" + letter.lowercaseChar()
     const val DOUBLE_CLIP = "double"
@@ -31,7 +40,7 @@ object SpellPlanner {
     /**
      * @param doubleMode true: "DOUBLE F" para letras repetidas seguidas. false: "F, F".
      */
-    fun spellSteps(word: String, doubleMode: Boolean, speed: Speed): List<AudioStep> {
+    fun spellSteps(word: String, doubleMode: Boolean, speed: SpellSpeed): List<AudioStep> {
         val gap = letterGapMs(speed)
         val steps = ArrayList<AudioStep>()
         val w = word.uppercase()
@@ -43,7 +52,7 @@ object SpellPlanner {
             var left = run
             while (left > 0) {
                 if (doubleMode && left >= 2) {
-                    steps.add(AudioStep(DOUBLE_CLIP, DOUBLE_TO_LETTER_GAP_MS))
+                    steps.add(AudioStep(DOUBLE_CLIP, speed.doubleGapMs))
                     steps.add(AudioStep(letterClip(c), gap))
                     left -= 2
                 } else {
@@ -58,7 +67,7 @@ object SpellPlanner {
 
     /** Lo que se verá/leerá como guion de la secuencia, por ejemplo "C, O, DOUBLE F, E, E". */
     fun spellText(word: String, doubleMode: Boolean): String =
-        spellSteps(word, doubleMode, Speed.NORMAL).let { steps ->
+        spellSteps(word, doubleMode, SpellSpeed.NORMAL).let { steps ->
             val out = ArrayList<String>()
             var pendingDouble = false
             for (s in steps) {
@@ -99,6 +108,9 @@ object SpellPlanner {
 
     fun wordClip(word: String): String = "w_" + word.lowercase()
 
-    /** Nombre del archivo según velocidad. */
+    /** Archivo de una palabra según su velocidad. */
     fun fileFor(clip: String, speed: Speed): String = "${clip}_${speed.suffix}"
+
+    /** Archivo de una letra (o de "double") según la velocidad del deletreo. */
+    fun letterFile(clip: String, speed: SpellSpeed): String = "${clip}_${speed.suffix}"
 }

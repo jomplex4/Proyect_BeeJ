@@ -41,12 +41,16 @@ import androidx.compose.ui.unit.sp
 import com.digitalminds.beej.AppViewModel
 import com.digitalminds.beej.R
 import com.digitalminds.beej.Screen
-import com.digitalminds.beej.core.ContestEvaluator
+import com.digitalminds.beej.core.Speed
 import com.digitalminds.beej.core.SpellPlanner
+import com.digitalminds.beej.core.SpellSpeed
 import com.digitalminds.beej.core.SpellingEvaluator
 import com.digitalminds.beej.core.SpellingResult
 import com.digitalminds.beej.core.ProgressLogic
+import com.digitalminds.beej.core.JudgeOutcome
 import com.digitalminds.beej.core.Verdict
+import com.digitalminds.beej.core.VoiceJudge
+import com.digitalminds.beej.core.VoiceJudgement
 import com.digitalminds.beej.core.Words
 import com.digitalminds.beej.voice.VoiceState
 import kotlinx.coroutines.delay
@@ -135,8 +139,12 @@ fun LearnWordScreen(vm: AppViewModel, index: Int) {
                 .padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            SpeedPicker(R.drawable.ic_speaker, "Velocidad de la palabra", wordSpeed) { vm.setWordSpeed(it) }
-            SpeedPicker(R.drawable.ic_spell, "Velocidad del deletreo", spellSpeed) { vm.setSpellSpeed(it) }
+            OptionPicker(R.drawable.ic_speaker, "Velocidad de la palabra", Speed.values().map { it.label }, wordSpeed.ordinal) {
+                vm.setWordSpeed(Speed.values()[it])
+            }
+            OptionPicker(R.drawable.ic_spell, "Velocidad del deletreo", SpellSpeed.values().map { it.label }, spellSpeed.ordinal) {
+                vm.setSpellSpeed(SpellSpeed.values()[it])
+            }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Repetidas", style = Type.Label, modifier = Modifier.width(34.dp + 12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -185,9 +193,9 @@ fun TrainScreen(vm: AppViewModel, s: Screen.Train) {
 
     var typed by remember(word) { mutableStateOf("") }
     var result by remember(word) { mutableStateOf<SpellingResult?>(null) }
-    var uncertain by remember(word) { mutableStateOf(false) }
+    var judgement by remember(word) { mutableStateOf<VoiceJudgement?>(null) }
+    var preparing by remember(word) { mutableStateOf(false) }
     var listening by remember(word) { mutableStateOf(false) }
-    var partial by remember(word) { mutableStateOf("") }
     val stop = remember(word) { BooleanArray(1) }
 
     LaunchedEffect(word) {
@@ -201,24 +209,15 @@ fun TrainScreen(vm: AppViewModel, s: Screen.Train) {
     }
 
     fun startListening() {
-        if (listening) return
-        listening = true; partial = ""; uncertain = false; result = null; stop[0] = false
+        if (listening || preparing) return
+        preparing = true; judgement = null; stop[0] = false
         scope.launch {
-            val toks = vm.voice.listen({ partial = it }, { stop[0] })
-            listening = false
-            val texts = SpellingEvaluator.stripWordEnds(toks.map { it.text }, word)
-            val r = SpellingEvaluator.evaluateTokens(word, texts)
-            val lowConf = toks.any { it.conf < ContestEvaluator.LOW_CONFIDENCE }
-            if (toks.isEmpty()) {
-                partial = ""
-                uncertain = true
-            } else if (!r.exact && lowConf) {
-                uncertain = true
-                result = null
-            } else {
-                result = r
-                vm.record(word, r.exact)
-            }
+            val cap = vm.voice.listen(word, false, { preparing = false; listening = true }, { stop[0] })
+            preparing = false; listening = false
+            val j = VoiceJudge.judge(word, cap.forced, cap.free, false)
+            judgement = j
+            if (j.outcome == JudgeOutcome.CORRECT) vm.record(word, true)
+            if (j.outcome == JudgeOutcome.WRONG) vm.record(word, false)
         }
     }
     val micGate = rememberMicGate { startListening() }
@@ -240,17 +239,15 @@ fun TrainScreen(vm: AppViewModel, s: Screen.Train) {
                 Spacer(Modifier.height(20.dp))
                 result?.let { ResultBlock(it) }
             } else {
-                val cur = result
+                val j = judgement
                 when {
                     voiceState is VoiceState.Failed ->
                         Text((voiceState as VoiceState.Failed).reason + " Usa el modo escrito.", style = Type.BodySecondary, textAlign = TextAlign.Center)
                     voiceState !is VoiceState.Ready ->
                         Text("Preparando la voz…", style = Type.BodySecondary)
-                    listening ->
-                        Text(if (partial.isBlank()) "Te escucho…" else partial, style = Type.Body.copy(fontSize = 18.sp), textAlign = TextAlign.Center)
-                    uncertain ->
-                        Text("No te escuché bien. Inténtalo otra vez.", style = Type.BodySecondary, textAlign = TextAlign.Center)
-                    cur != null -> ResultBlock(cur)
+                    preparing -> Text("Preparando…", style = Type.BodySecondary)
+                    listening -> Text("Te escucho…", style = Type.Body.copy(fontSize = 18.sp), textAlign = TextAlign.Center)
+                    j != null -> OralResult(j)
                     else -> Text("Di las letras de la palabra", style = Type.BodySecondary)
                 }
             }
@@ -288,7 +285,7 @@ fun TrainScreen(vm: AppViewModel, s: Screen.Train) {
                     if (listening) "Listo" else "Hablar",
                     { if (listening) { stop[0] = true } else { micGate() } },
                     accent = true,
-                    enabled = voiceState is VoiceState.Ready
+                    enabled = voiceState is VoiceState.Ready && !preparing
                 )
             }
             SquareButton(R.drawable.ic_next, "Siguiente", { go(1) })
@@ -339,5 +336,35 @@ fun ResultBlock(r: SpellingResult) {
             )
         }
         if (!r.exact) DiffLines(r)
+    }
+}
+
+/** Resultado del entrenamiento oral: veredicto claro, dónde falló y cómo fue el ritmo. */
+@Composable
+fun OralResult(j: VoiceJudgement) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        when (j.outcome) {
+            JudgeOutcome.CORRECT, JudgeOutcome.WRONG -> {
+                ResultBlock(j.spelling)
+                FluencyLine(j)
+            }
+            JudgeOutcome.UNSURE -> {
+                Text("No estoy seguro de lo que oí. Repite con calma.", style = Type.Body, textAlign = TextAlign.Center)
+                if (j.doubtLetters.isNotEmpty()) {
+                    val d = j.doubtLetters.first()
+                    Text("Revisa la ${d.first}: se parecía a ${d.second}.", style = Type.BodySecondary, textAlign = TextAlign.Center)
+                }
+            }
+            JudgeOutcome.NOTHING -> Text("No te escuché. Habla más cerca del micrófono.", style = Type.BodySecondary, textAlign = TextAlign.Center)
+        }
+    }
+}
+
+@Composable
+fun FluencyLine(j: VoiceJudgement) {
+    if (j.lettersPerSec > 0.0) {
+        val rate = "%.1f".format(j.lettersPerSec)
+        val extra = if (j.longPause) "  ·  pausa larga" else ""
+        Text("Ritmo: $rate letras/s$extra", style = Type.Label)
     }
 }

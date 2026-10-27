@@ -12,6 +12,7 @@ import com.digitalminds.beej.core.DayPlan
 import com.digitalminds.beej.core.Progress
 import com.digitalminds.beej.core.ProgressLogic
 import com.digitalminds.beej.core.Speed
+import com.digitalminds.beej.core.SpellSpeed
 import com.digitalminds.beej.core.SpellPlanner
 import com.digitalminds.beej.core.StudyPlan
 import com.digitalminds.beej.core.Words
@@ -50,7 +51,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val _wordSpeed = MutableStateFlow(store.wordSpeed)
     val wordSpeed: StateFlow<Speed> = _wordSpeed
     private val _spellSpeed = MutableStateFlow(store.spellSpeed)
-    val spellSpeed: StateFlow<Speed> = _spellSpeed
+    val spellSpeed: StateFlow<SpellSpeed> = _spellSpeed
     private val _doubleMode = MutableStateFlow(store.doubleMode)
     val doubleMode: StateFlow<Boolean> = _doubleMode
 
@@ -70,7 +71,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch(Dispatchers.IO) {
             audio.preload(AudioEngine.filesForWordSpeed(_wordSpeed.value, Words.all.map { it.text }))
             audio.preload(AudioEngine.filesForLetterSpeed(_spellSpeed.value))
-            audio.preload(AudioEngine.filesForLetterSpeed(Speed.NORMAL))
+            audio.preload(AudioEngine.filesForLetterSpeed(SpellSpeed.NORMAL))
             delay(1200)
             voice.prepare()
         }
@@ -104,7 +105,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         _wordSpeed.value = s; store.wordSpeed = s
         viewModelScope.launch(Dispatchers.IO) { audio.preload(AudioEngine.filesForWordSpeed(s, Words.all.map { it.text })) }
     }
-    fun setSpellSpeed(s: Speed) {
+    fun setSpellSpeed(s: SpellSpeed) {
         _spellSpeed.value = s; store.spellSpeed = s
         viewModelScope.launch(Dispatchers.IO) { audio.preload(AudioEngine.filesForLetterSpeed(s)) }
     }
@@ -135,16 +136,16 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun playLetter(letter: Char) {
         stopAudio()
-        audioJob = viewModelScope.launch { audio.play(SpellPlanner.fileFor(SpellPlanner.letterClip(letter), Speed.NORMAL)) }
+        audioJob = viewModelScope.launch { audio.play(SpellPlanner.letterFile(SpellPlanner.letterClip(letter), SpellSpeed.NORMAL)) }
     }
 
     /** Dos letras seguidas, para practicar pares que se confunden. */
     fun playPair(a: Char, b: Char) {
         stopAudio()
         audioJob = viewModelScope.launch {
-            audio.play(SpellPlanner.fileFor(SpellPlanner.letterClip(a), Speed.NORMAL))
+            audio.play(SpellPlanner.letterFile(SpellPlanner.letterClip(a), SpellSpeed.NORMAL))
             delay(550)
-            audio.play(SpellPlanner.fileFor(SpellPlanner.letterClip(b), Speed.NORMAL))
+            audio.play(SpellPlanner.letterFile(SpellPlanner.letterClip(b), SpellSpeed.NORMAL))
         }
     }
 

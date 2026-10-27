@@ -12,8 +12,8 @@ android {
         applicationId = "com.digitalminds.beej"
         minSdk = 31
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.1"
         // Solo estas dos: cubre el Galaxy A03 Core (32 bits) y los teléfonos modernos (64 bits).
         ndk { abiFilters += listOf("armeabi-v7a", "arm64-v8a") }
     }

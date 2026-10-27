@@ -40,7 +40,6 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.digitalminds.beej.R
 import com.digitalminds.beej.core.Op
-import com.digitalminds.beej.core.Speed
 import com.digitalminds.beej.core.SpellingResult
 import com.digitalminds.beej.core.Verdict
 
@@ -99,12 +98,15 @@ fun BackBar(onBack: () -> Unit, trailing: @Composable RowScope.() -> Unit = {}) 
 }
 
 @Composable
-fun SpeedPicker(icon: Int, desc: String, current: Speed, onChange: (Speed) -> Unit) {
+fun OptionPicker(icon: Int, desc: String, labels: List<String>, selected: Int, onSelect: (Int) -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Icon(painterResource(icon), contentDescription = desc, tint = Brand.TextSecondary, modifier = Modifier.size(22.dp))
         Spacer(Modifier.width(12.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            for (s in Speed.values()) Chip(s.label, current == s, { onChange(s) })
+        Row(
+            Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            labels.forEachIndexed { i, l -> Chip(l, selected == i, { onSelect(i) }) }
         }
     }
 }
